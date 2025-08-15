@@ -102,7 +102,15 @@ public class WifiAwareShim {
         boolean available = awareMgr != null && awareMgr.isAvailable();
         Boolean instant = null;
         if (Build.VERSION.SDK_INT >= 33 && awareMgr != null) {
-            instant = awareMgr.isInstantCommunicationModeSupported();
+            try {
+                java.lang.reflect.Method m = android.net.wifi.aware.WifiAwareManager.class
+                        .getMethod("isInstantCommunicationModeSupported");
+                Object r = m.invoke(awareMgr);
+                if (r instanceof Boolean)
+                    instant = (Boolean) r;
+            } catch (Throwable ignore) {
+                instant = null;
+            }
         }
         if (!available) {
             return new WifiAwareStateReceiver.AttachResult(false, "Wi-Fi Aware unavailable", Build.VERSION.SDK_INT,

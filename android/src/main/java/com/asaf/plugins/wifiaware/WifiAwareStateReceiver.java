@@ -24,7 +24,15 @@ public class WifiAwareStateReceiver extends BroadcastReceiver {
         boolean available = mgr != null && mgr.isAvailable();
         Boolean instant = null;
         if (Build.VERSION.SDK_INT >= 33 && mgr != null) {
-            instant = mgr.isInstantCommunicationModeSupported();
+            try {
+                java.lang.reflect.Method m = android.net.wifi.aware.WifiAwareManager.class
+                        .getMethod("isInstantCommunicationModeSupported");
+                Object r = m.invoke(mgr);
+                if (r instanceof Boolean)
+                    instant = (Boolean) r;
+            } catch (Throwable ignore) {
+                instant = null;
+            }
         }
         listener.onChange(new AttachResult(
                 available,
