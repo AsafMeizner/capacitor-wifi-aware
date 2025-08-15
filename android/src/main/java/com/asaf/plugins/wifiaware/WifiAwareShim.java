@@ -33,6 +33,46 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class WifiAwareShim {
 
+    // --- helpers for Android 13 "instant communication" without requiring
+    // compileSdk 33+ ---
+
+    private static boolean isInstantSupported(android.net.wifi.aware.WifiAwareManager mgr) {
+        if (android.os.Build.VERSION.SDK_INT < 33 || mgr == null)
+            return false;
+        try {
+            java.lang.reflect.Method m = android.net.wifi.aware.WifiAwareManager.class
+                    .getMethod("isInstantCommunicationModeSupported");
+            Object r = m.invoke(mgr);
+            return (r instanceof Boolean) && ((Boolean) r);
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    /** Works for both signatures: (boolean) and (boolean,int) */
+    private static void enableInstantIfAvailable(Object builder, boolean enable) {
+        if (!enable || android.os.Build.VERSION.SDK_INT < 33)
+            return;
+        try {
+            // Try 1-arg signature first
+            java.lang.reflect.Method m1 = builder.getClass()
+                    .getMethod("setInstantCommunicationModeEnabled", boolean.class);
+            m1.invoke(builder, true);
+            return;
+        } catch (NoSuchMethodException ignored) {
+            // fall through
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            // Fallback: 2-arg signature (boolean, int windowSeconds)
+            java.lang.reflect.Method m2 = builder.getClass()
+                    .getMethod("setInstantCommunicationModeEnabled", boolean.class, int.class);
+            m2.invoke(builder, true, 30); // 30s window
+        } catch (Throwable ignored) {
+        }
+    }
+
     public interface MessageSink {
         void onMessageReceived(String peerId, String dataBase64);
     }
@@ -139,9 +179,7 @@ public class WifiAwareShim {
             byte[] bytes = Base64.decode(opts.serviceInfoBase64, Base64.DEFAULT);
             b.setServiceSpecificInfo(bytes);
         }
-        if (Build.VERSION.SDK_INT >= 33 && opts.instantMode && awareMgr.isInstantCommunicationModeSupported()) {
-            b.setInstantCommunicationModeEnabled(true);
-        }
+        enableInstantIfAvailable(b, opts.instantMode && isInstantSupported(awareMgr));
         if (opts.rangingEnabled) {
             b.setRangingEnabled(true);
         }
@@ -179,9 +217,7 @@ public class WifiAwareShim {
         if (session == null)
             throw new IllegalStateException("Call attach() first");
         SubscribeConfig.Builder b = new SubscribeConfig.Builder().setServiceName(opts.serviceName);
-        if (Build.VERSION.SDK_INT >= 33 && opts.instantMode && awareMgr.isInstantCommunicationModeSupported()) {
-            b.setInstantCommunicationModeEnabled(true);
-        }
+        enableInstantIfAvailable(b, opts.instantMode && isInstantSupported(awareMgr));
         if (Build.VERSION.SDK_INT >= 31) {
             if (opts.minDistanceMm != null)
                 b.setMinDistanceMm(opts.minDistanceMm);
@@ -367,11 +403,14 @@ public class WifiAwareShim {
     // ===== Utils =====
 
     private String idFor(android.net.wifi.aware.PeerHandle handle) {
-        for (Map.Entry<String, android.net.wifi.aware.PeerHandle> e : peers.entrySet()) {
-            if (e.getValue().peerId == handle.peerId)
+        // If we already assigned an ID to an equivalent handle, return it
+        for (java.util.Map.Entry<String, android.net.wifi.aware.PeerHandle> e : peers.entrySet()) {
+            if (e.getValue() != null && e.getValue().equals(handle)) {
                 return e.getKey();
+            }
         }
-        String id = UUID.randomUUID().toString();
+        // Otherwise create one and remember it
+        String id = java.util.UUID.randomUUID().toString();
         peers.put(id, handle);
         return id;
     }
