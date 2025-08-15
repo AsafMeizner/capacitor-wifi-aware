@@ -1,2 +1,27 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.asaf.plugins.wifiaware">
+
+    <uses-feature android:name="android.hardware.wifi.aware" android:required="false" />
+
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
+
+    <application>
+        <receiver
+            android:name=".WifiAwareStateReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.net.wifi.aware.action.WIFI_AWARE_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>
