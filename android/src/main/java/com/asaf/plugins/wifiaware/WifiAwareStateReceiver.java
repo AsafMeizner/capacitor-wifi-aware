@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.wifi.aware.WifiAwareManager;
 import android.os.Build;
+import java.util.UUID;
 
 public class WifiAwareStateReceiver extends BroadcastReceiver {
 
@@ -34,11 +35,27 @@ public class WifiAwareStateReceiver extends BroadcastReceiver {
                 instant = null;
             }
         }
+        
+        // Get device name
+        String deviceName = android.provider.Settings.Global.getString(context.getContentResolver(), "device_name");
+        if (deviceName == null || deviceName.isEmpty()) {
+            deviceName = Build.MODEL;
+        }
+        
+        // Generate a stable device ID
+        String deviceId = android.provider.Settings.Secure.getString(
+                context.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+        if (deviceId == null || deviceId.isEmpty()) {
+            deviceId = UUID.randomUUID().toString();
+        }
+        
         listener.onChange(new AttachResult(
                 available,
                 available ? null : "Wi-Fi Aware unavailable (Wi-Fi/Location off or conflicting modes)",
                 Build.VERSION.SDK_INT,
-                instant));
+                instant,
+                deviceName,
+                deviceId));
     }
 
     public static class AttachResult {
@@ -46,12 +63,21 @@ public class WifiAwareStateReceiver extends BroadcastReceiver {
         public final String reason;
         public final Integer androidApiLevel;
         public final Boolean instantCommSupported;
+        public final String deviceName;
+        public final String deviceId;
 
-        public AttachResult(boolean a, String r, Integer lvl, Boolean instant) {
+        public AttachResult(boolean a, String r, Integer lvl, Boolean instant, String deviceName, String deviceId) {
             this.available = a;
             this.reason = r;
             this.androidApiLevel = lvl;
             this.instantCommSupported = instant;
+            this.deviceName = deviceName;
+            this.deviceId = deviceId;
+        }
+        
+        // Constructor for backward compatibility
+        public AttachResult(boolean a, String r, Integer lvl, Boolean instant) {
+            this(a, r, lvl, instant, Build.MODEL, UUID.randomUUID().toString());
         }
     }
 }

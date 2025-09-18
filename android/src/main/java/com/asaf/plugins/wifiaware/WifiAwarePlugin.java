@@ -158,6 +158,73 @@ public class WifiAwarePlugin extends Plugin implements WifiAwareShim.MessageSink
         notifyListeners("socketClosed", new JSObject());
         call.resolve();
     }
+    
+    @PluginMethod
+    public void sendFileTransfer(PluginCall call) {
+        String peerId = call.getString("peerId");
+        String filePath = call.getString("filePath");
+        String fileBase64 = call.getString("fileBase64");
+        String fileName = call.getString("fileName");
+        String mimeType = call.getString("mimeType");
+        
+        if (peerId == null) {
+            call.reject("peerId is required");
+            return;
+        }
+        
+        if ((filePath == null && fileBase64 == null) || (filePath != null && fileBase64 != null)) {
+            call.reject("Either filePath OR fileBase64 must be provided");
+            return;
+        }
+        
+        if (fileName == null) {
+            if (filePath != null) {
+                // Extract filename from path
+                int lastPathSeparator = filePath.lastIndexOf('/');
+                if (lastPathSeparator < 0) {
+                    lastPathSeparator = filePath.lastIndexOf('\\');
+                }
+                if (lastPathSeparator >= 0 && lastPathSeparator < filePath.length() - 1) {
+                    fileName = filePath.substring(lastPathSeparator + 1);
+                } else {
+                    call.reject("fileName is required when the filename cannot be determined from filePath");
+                    return;
+                }
+            } else {
+                call.reject("fileName is required when using fileBase64");
+                return;
+            }
+        }
+        
+        try {
+            String transferId = aware.sendFileTransfer(peerId, filePath, fileBase64, fileName, mimeType);
+            JSObject result = new JSObject();
+            result.put("transferId", transferId);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Failed to initiate file transfer: " + e.getMessage());
+        }
+    }
+    
+    @PluginMethod
+    public void respondToFileTransfer(PluginCall call) {
+        String peerId = call.getString("peerId");
+        String transferId = call.getString("transferId");
+        Boolean accept = call.getBoolean("accept", false);
+        String savePath = call.getString("savePath");
+        
+        if (peerId == null || transferId == null) {
+            call.reject("peerId and transferId are required");
+            return;
+        }
+        
+        try {
+            aware.respondToFileTransfer(peerId, transferId, accept, savePath);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to respond to file transfer: " + e.getMessage());
+        }
+    }
 
     @PluginMethod
     public void removeAllListeners(PluginCall call) {
@@ -173,6 +240,84 @@ public class WifiAwarePlugin extends Plugin implements WifiAwareShim.MessageSink
         js.put("peerId", peerId);
         js.put("dataBase64", dataBase64);
         notifyListeners("messageReceived", js);
+    }
+    
+    @Override
+    public void onFileTransferRequest(String peerId, String transferId, String fileName, String mimeType, long fileSize) {
+        JSObject js = new JSObject();
+        js.put("peerId", peerId);
+        js.put("transferId", transferId);
+        js.put("fileName", fileName);
+        if (mimeType != null && !mimeType.isEmpty()) {
+            js.put("mimeType", mimeType);
+        }
+        js.put("fileSize", fileSize);
+        notifyListeners("fileTransferRequest", js);
+    }
+    
+    @Override
+    public void onFileTransferProgress(String peerId, String transferId, String fileName, 
+                                       long bytesTransferred, long totalBytes, String direction, String status) {
+        JSObject js = new JSObject();
+        js.put("peerId", peerId);
+        js.put("transferId", transferId);
+        js.put("fileName", fileName);
+        js.put("bytesTransferred", bytesTransferred);
+        js.put("totalBytes", totalBytes);
+        js.put("progress", (int)((bytesTransferred * 100) / Math.max(1, totalBytes)));
+        js.put("direction", direction);
+        js.put("status", status);
+        notifyListeners("fileTransferProgress", js);
+    }
+    
+    @Override
+    public void onFileTransferCompleted(String peerId, String transferId, String fileName, 
+                                       String filePath, String fileBase64) {
+        JSObject js = new JSObject();
+        js.put("peerId", peerId);
+        js.put("transferId", transferId);
+        js.put("fileName", fileName);
+        if (filePath != null) {
+            js.put("filePath", filePath);
+        }
+        if (fileBase64 != null) {
+            js.put("fileBase64", fileBase64);
+        }
+        notifyListeners("fileTransferCompleted", js);
+    }
+    
+    @Override
+    public void onPeerConnected(String socketId, String peerId, Map<String, Object> deviceInfo) {
+        JSObject js = new JSObject();
+        js.put("socketId", socketId);
+        js.put("peerId", peerId);
+        
+        if (deviceInfo != null) {
+            JSObject deviceInfoJs = new JSObject();
+            for (Map.Entry<String, Object> entry : deviceInfo.entrySet()) {
+                deviceInfoJs.put(entry.getKey(), entry.getValue());
+            }
+            js.put("deviceInfo", deviceInfoJs);
+        }
+        
+        notifyListeners("peerConnected", js);
+    }
+    
+    @Override
+    public void onPeerDisconnected(String socketId, String peerId) {
+        JSObject js = new JSObject();
+        js.put("socketId", socketId);
+        js.put("peerId", peerId);
+        notifyListeners("peerDisconnected", js);
+    }
+    
+    @Override
+    public void onSocketClosed(String socketId) {
+        JSObject js = new JSObject();
+        if (socketId != null) {
+            js.put("socketId", socketId);
+        }
+        notifyListeners("socketClosed", js);
     }
 
     // ==== Permission handling ====
